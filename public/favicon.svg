@@ -1,17 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="The Little Sound Archive">
-  <rect x="2" y="2" width="60" height="60" rx="15" fill="#FAF0DC"/>
-  <g stroke="#321E14" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="9" y="15" width="46" height="38" rx="7" fill="#ECA45C"/>
-    <rect x="13" y="18" width="38" height="29" rx="5" fill="#FFF4E2"/>
-    <circle cx="30" cy="32" r="12.5" fill="#51413F"/>
-    <circle cx="30" cy="32" r="8.3" fill="none" stroke="#9B8B87" stroke-width="1.1"/>
-    <circle cx="30" cy="32" r="4.2" fill="#FAF0DC" stroke-width="1.6"/>
-    <circle cx="30" cy="32" r="1.6" fill="#F4B82F" stroke="none"/>
-    <path d="M44 23 L48 26 L42 36" fill="none" stroke="#F3D8CF" stroke-width="3.2"/>
-    <path d="M42 36 L39 40" fill="none" stroke="#321E14" stroke-width="2.7"/>
-    <path d="M39 40 l-2 2" fill="none" stroke="#F15F57" stroke-width="3.2"/>
-  </g>
-  <g fill="#F4B82F" stroke="#321E14" stroke-width="1.3">
-    <circle cx="17" cy="11" r="2.4"/><circle cx="20.6" cy="8.5" r="1.8"/><circle cx="13.8" cy="8.7" r="1.8"/>
-  </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="13" fill="#FAF0DC"/><g stroke="#321E14" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="28" width="54" height="29" rx="6" fill="#ECA45C"/><rect x="8" y="8" width="48" height="25" rx="6" fill="#F0D9D7"/><circle cx="30" cy="41" r="14" fill="#51413F"/><circle cx="30" cy="41" r="8" fill="#FAF0DC"/><circle cx="30" cy="41" r="3.5" fill="#F4B82F"/><path d="M42 29l8 4-9 13" fill="none" stroke="#321E14"/><path d="M12 13h12m6 0h18M13 20l4 9m23 1-12-2" fill="none"/><path d="M22 9l4 1m-3 3 4-3" stroke="#F4B82F" stroke-width="4"/></g><g fill="#F4B82F"><path d="M6 22l2-5 2 5 5 2-5 2-2 5-2-5-5-2z"/></g></svg>
