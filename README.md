@@ -33,7 +33,11 @@ The Vite development server runs at `http://127.0.0.1:3000/`. To use npm instead
 - The app uses Audius' public read-only catalog API to show weekly trending tracks and search for tracks.
 - Publicly streamable, non-gated tracks are loaded directly into the browser with the Audius track-stream endpoint.
 - No listener sign-in or OAuth flow is required for public track search and playback. Account actions such as favorites or uploads are not part of this implementation.
-- Play/Pause, Stop/reset, Previous/Next within the current search result queue, progress/time display and volume are wired to the browser audio element.
+- Play/Pause, Stop/reset, Previous/Next, progress/time display and volume are wired to the browser audio element.
+- Tracks can be added individually or in bulk from search results to a multi-track play queue. The queue supports duplicate prevention, playback in order, automatic next-track playback, removing upcoming items and clearing upcoming items while preserving the current track.
+- The queue supports Shuffle, Repeat One and Repeat Queue. Shuffle reorders upcoming tracks while keeping the current track in place; Repeat One restarts the current stream; Repeat Queue wraps to the start after the final track.
+- The queue and playback modes are automatically saved to versioned browser `localStorage`, with a Save Queue action in the player UI. On a later visit, the queue is restored but playback does not auto-start; the listener presses Play queue. Storage failures or malformed saved data fall back safely without interrupting playback.
+- This is a browser-local listening queue, not a saved Audius account playlist. Creating or editing official Audius playlists is a separate authenticated account action.
 - The stream is routed through the existing Web Audio graph where the browser permits it, so the frequency visualizer reads the actual stream signal. The local procedural demo remains available when a user loads a record from the shelf.
 - Track artwork, artist attribution and a link to the Audius source are shown when the API provides them.
 
@@ -55,7 +59,7 @@ Audius is a catalog and streaming source, not a blanket license for every record
 | build | `node ./node_modules/vite/bin/vite.js build` | Production build into `dist/` |
 | preview | `node ./node_modules/vite/bin/vite.js preview` | Preview the production build |
 | lint | `tsc --noEmit` | TypeScript check |
-| test | `node --import tsx --test src/utils/audius.test.ts src/utils/shelfMath.test.ts src/utils/visualizerMath.test.ts` | Run unit tests with Node's test runner |
+| test | `node --import tsx --test src/utils/audius.test.ts src/utils/audiusQueue.test.ts src/utils/shelfMath.test.ts src/utils/visualizerMath.test.ts` | Run unit tests with Node's test runner |
 
 ## 3D diagnostics
 

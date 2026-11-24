@@ -5,12 +5,19 @@ import {
   ChevronUp,
   Pause,
   Play,
+  Repeat,
+  Repeat1,
+  Save,
+  Check,
+  Shuffle,
+  ListMusic,
   SkipBack,
   SkipForward,
   Square,
   Volume2,
 } from 'lucide-react';
 import type { AudiusTrack } from '../utils/audius';
+import type { AudiusRepeatMode } from '../utils/audiusQueue';
 import type {
   AppMode,
   FilterMode,
@@ -37,6 +44,14 @@ interface BottomControlDockProps {
   status: PlayerStatusSnapshot;
   audiusActive: boolean;
   audiusTrack: AudiusTrack | null;
+  audiusQueueCount: number;
+  shuffleEnabled: boolean;
+  repeatMode: AudiusRepeatMode;
+  queueSaved: boolean;
+  onToggleShuffle: () => void;
+  onCycleRepeatMode: () => void;
+  onSaveAudiusQueue: () => void;
+  onOpenAudiusQueue: () => void;
   onStepShelf: (delta: number) => void;
   onTogglePlay: () => void;
   onStop: () => void;
@@ -62,6 +77,14 @@ export function BottomControlDock({
   status,
   audiusActive,
   audiusTrack,
+  audiusQueueCount,
+  shuffleEnabled,
+  repeatMode,
+  queueSaved,
+  onToggleShuffle,
+  onCycleRepeatMode,
+  onSaveAudiusQueue,
+  onOpenAudiusQueue,
   onStepShelf,
   onTogglePlay,
   onStop,
@@ -191,10 +214,51 @@ export function BottomControlDock({
         ) : (
           <div className="flex flex-col gap-2.5">
             {audiusActive && (
-              <div className="flex items-center justify-between gap-2 border border-[#1DB954]/30 bg-[#E9F6EC] px-3 py-1.5 text-[10px] font-mono-tech text-[#24643A]" role="status">
-                <span>AUDIUS STREAM · BROWSER PLAYER ACTIVE</span>
-                <span>LIVE AUDIO VISUALIZER ACTIVE</span>
-              </div>
+              <>
+                <div className="flex items-center justify-between gap-2 border border-[#648B72]/30 bg-[#E9F6EC] px-3 py-1.5 text-[10px] font-mono-tech text-[#24643A]" role="status">
+                  <span>AUDIUS STREAM · BROWSER PLAYER ACTIVE</span>
+                  <span>LIVE AUDIO VISUALIZER ACTIVE</span>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#171717]/10 pb-2" aria-label="Audius playback modes">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={onToggleShuffle}
+                      aria-pressed={shuffleEnabled}
+                      title="Shuffle upcoming tracks"
+                      className={`inline-flex h-7 items-center gap-1.5 border px-2 text-[10px] font-mono-tech transition-colors ${shuffleEnabled ? 'border-[#648B72] bg-[#E2EDE3] text-[#315A3B]' : 'border-[#171717]/20 bg-white text-[#454542] hover:bg-[#E7E7E2]'}`}
+                    >
+                      <Shuffle className="h-3.5 w-3.5" aria-hidden="true" /> SHUFFLE
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onCycleRepeatMode}
+                      aria-pressed={repeatMode !== 'off'}
+                      title="Cycle Repeat Off, Repeat Queue, Repeat One"
+                      className={`inline-flex h-7 items-center gap-1.5 border px-2 text-[10px] font-mono-tech transition-colors ${repeatMode !== 'off' ? 'border-[#648B72] bg-[#E2EDE3] text-[#315A3B]' : 'border-[#171717]/20 bg-white text-[#454542] hover:bg-[#E7E7E2]'}`}
+                    >
+                      {repeatMode === 'one' ? <Repeat1 className="h-3.5 w-3.5" aria-hidden="true" /> : <Repeat className="h-3.5 w-3.5" aria-hidden="true" />}
+                      {repeatMode === 'one' ? 'REPEAT ONE' : repeatMode === 'queue' ? 'REPEAT QUEUE' : 'REPEAT OFF'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onSaveAudiusQueue}
+                      title="Save queue to this browser"
+                      className="inline-flex h-7 items-center gap-1.5 border border-[#171717]/20 bg-white px-2 text-[10px] font-mono-tech text-[#454542] hover:bg-[#E7E7E2]"
+                    >
+                      {queueSaved ? <Check className="h-3.5 w-3.5 text-[#55725B]" aria-hidden="true" /> : <Save className="h-3.5 w-3.5" aria-hidden="true" />}
+                      {queueSaved ? 'SAVED' : 'SAVE QUEUE'}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onOpenAudiusQueue}
+                    className="inline-flex h-7 items-center gap-1.5 bg-[#171717] px-2.5 text-[10px] font-mono-tech text-white hover:bg-[#30302D]"
+                  >
+                    <ListMusic className="h-3.5 w-3.5" aria-hidden="true" /> QUEUE ({audiusQueueCount})
+                  </button>
+                </div>
+              </>
             )}
             {/* Row 1: Camera Inspection Sections + Side / Hardware Switches */}
             <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#171717]/10">

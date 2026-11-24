@@ -5,6 +5,17 @@ import { FrequencyVisualizerOverlay } from './components/FrequencyVisualizerOver
 import { LoaderScreen } from './components/LoaderScreen';
 import { TopMetadataBar } from './components/TopMetadataBar';
 import { getAudiusTrackStreamUrl, type AudiusTrack } from './utils/audius';
+import {
+  appendUniqueAudiusTracks,
+  cycleAudiusRepeatMode,
+  findAudiusQueueIndex,
+  getNextAudiusQueueTrack,
+  loadAudiusQueueState,
+  removeAudiusQueueTrack,
+  saveAudiusQueueState,
+  shuffleAudiusQueue,
+  type AudiusRepeatMode,
+} from './utils/audiusQueue';
 import { INITIAL_CATALOG } from './data/catalog';
 import type { ListeningRoomScene } from './three/ListeningRoomScene';
 import type {
@@ -49,11 +60,20 @@ export default function App() {
   const [hoverHint, setHoverHint] = useState<string | null>(null);
   const [webglLost, setWebglLost] = useState(false);
   const [audiusPanelOpen, setAudiusPanelOpen] = useState(false);
+  const [audiusPanelInitialTab, setAudiusPanelInitialTab] = useState<'browse' | 'queue'>('browse');
   const [audiusActive, setAudiusActive] = useState(false);
   const [audiusMessage, setAudiusMessage] = useState('');
   const [audiusTrack, setAudiusTrack] = useState<AudiusTrack | null>(null);
-  const [audiusQueue, setAudiusQueue] = useState<AudiusTrack[]>([]);
-  const [audiusQueueIndex, setAudiusQueueIndex] = useState(-1);
+  const [savedAudiusQueueState] = useState(() => loadAudiusQueueState());
+  const [audiusQueue, setAudiusQueue] = useState<AudiusTrack[]>(savedAudiusQueueState.queue);
+  const [shuffleEnabled, setShuffleEnabled] = useState(savedAudiusQueueState.shuffleEnabled);
+  const [repeatMode, setRepeatMode] = useState<AudiusRepeatMode>(savedAudiusQueueState.repeatMode);
+  const [queueSaved, setQueueSaved] = useState(savedAudiusQueueState.queue.length > 0);
+  const audiusQueueRef = useRef<AudiusTrack[]>(audiusQueue);
+  const repeatModeRef = useRef<AudiusRepeatMode>(repeatMode);
+  audiusQueueRef.current = audiusQueue;
+  repeatModeRef.current = repeatMode;
+  const playAudiusQueueItemRef = useRef<(track: AudiusTrack, queue: AudiusTrack[]) => Promise<void>>(async () => {});
 
   const [status, setStatus] = useState<PlayerStatusSnapshot>({
     isPlaying: false,
@@ -108,14 +128,24 @@ export default function App() {
     (action: 'stop' | 'togglePlay' | 'next' | 'prev' | 'side' | 'speed' | 'volume') => void
   >(() => {});
 
+  // Save queue metadata and playback preferences automatically. Playback itself is never auto-started on reload.
+  useEffect(() => {
+    const saved = saveAudiusQueueState({ queue: audiusQueue, shuffleEnabled, repeatMode });
+    setQueueSaved(saved);
+  }, [audiusQueue, shuffleEnabled, repeatMode]);
+
   const playAudiusQueueItem = useCallback(async (
     track: AudiusTrack,
     queue: AudiusTrack[],
-    queueIndex: number,
   ) => {
     const streamUrl = getAudiusTrackStreamUrl(track.id);
     const audio = audioRef.current;
     if (!audio) throw new Error('The listening-room audio engine is not ready.');
+
+    // Publish queue changes before awaiting playback setup so tracks added while
+    // a stream is preparing are not overwritten by an older queue snapshot.
+    audiusQueueRef.current = queue;
+    setAudiusQueue(queue);
 
     await audio.loadExternalTrack(
       { ...activePlayerRecord, title: track.title, artist: track.artist },
@@ -123,8 +153,23 @@ export default function App() {
       streamUrl,
       true,
       () => {
+        // Read the latest queue so tracks added while the current song is playing
+        // are included when the browser fires the media element's `ended` event.
+        const latestQueue = audiusQueueRef.current;
+        const activeRepeatMode = repeatModeRef.current;
+        const nextTrack = getNextAudiusQueueTrack(latestQueue, track.id, activeRepeatMode);
+        if (nextTrack) {
+          setAudiusMessage(activeRepeatMode === 'one'
+            ? `Repeating · ${track.title}`
+            : `Up next · ${nextTrack.title}`);
+          void playAudiusQueueItemRef.current(nextTrack, latestQueue).catch(() => {
+            setStatus((prev) => ({ ...prev, isPlaying: false, level: 0 }));
+            setAudiusMessage('The next track could not be loaded. Choose another track from your queue.');
+          });
+          return;
+        }
         setStatus((prev) => ({ ...prev, isPlaying: false, elapsedSec: prev.durationSec, level: 0 }));
-        setAudiusMessage('Track finished. Choose another track or press Play to replay it.');
+        setAudiusMessage('Queue finished. Add more tracks to keep listening.');
       },
       () => {
         setStatus((prev) => ({ ...prev, isPlaying: false, level: 0 }));
@@ -133,8 +178,6 @@ export default function App() {
     );
 
     setAudiusTrack(track);
-    setAudiusQueue(queue);
-    setAudiusQueueIndex(queueIndex);
     setAudiusActive(true);
     setAudiusMessage(`Now playing · ${track.title}`);
     setSection('overview');
@@ -148,11 +191,96 @@ export default function App() {
     }));
   }, [activePlayerRecord]);
 
-  const handlePlayAudiusTrack = useCallback(async (track: AudiusTrack, queue: AudiusTrack[]) => {
-    const selectedQueue = queue.some((item) => item.id === track.id) ? queue : [track];
-    const queueIndex = Math.max(0, selectedQueue.findIndex((item) => item.id === track.id));
-    await playAudiusQueueItem(track, selectedQueue, queueIndex);
+  // Keep a stable callback ref for the HTMLAudioElement's asynchronous `ended` event.
+  playAudiusQueueItemRef.current = playAudiusQueueItem;
+
+  const handlePlayAudiusTrack = useCallback(async (track: AudiusTrack) => {
+    const currentQueue = audiusQueueRef.current;
+    const existingIndex = findAudiusQueueIndex(currentQueue, track.id);
+    let nextQueue = currentQueue;
+
+    if (existingIndex < 0) {
+      if (audiusActive && audiusTrack) {
+        const currentIndex = findAudiusQueueIndex(currentQueue, audiusTrack.id);
+        const insertionIndex = currentIndex >= 0 ? currentIndex + 1 : currentQueue.length;
+        nextQueue = [...currentQueue];
+        nextQueue.splice(insertionIndex, 0, track);
+      } else {
+        nextQueue = [track, ...currentQueue];
+      }
+    }
+
+    if (shuffleEnabled) nextQueue = shuffleAudiusQueue(nextQueue, track.id);
+    await playAudiusQueueItem(track, nextQueue);
+  }, [audiusActive, audiusTrack, playAudiusQueueItem, shuffleEnabled]);
+
+  const handleAddAudiusTracks = useCallback((tracks: AudiusTrack[]) => {
+    const result = appendUniqueAudiusTracks(audiusQueueRef.current, tracks);
+    const nextQueue = shuffleEnabled && result.addedCount > 0
+      ? shuffleAudiusQueue(result.queue, audiusTrack?.id ?? null)
+      : result.queue;
+    audiusQueueRef.current = nextQueue;
+    setAudiusQueue(nextQueue);
+    if (result.addedCount > 0) {
+      setAudiusMessage(`${result.addedCount} ${result.addedCount === 1 ? 'track' : 'tracks'} added to queue.`);
+    }
+    return result.addedCount;
+  }, [shuffleEnabled, audiusTrack]);
+
+  const handleRemoveAudiusTrack = useCallback((trackId: string) => {
+    const previousQueue = audiusQueueRef.current;
+    const nextQueue = removeAudiusQueueTrack(previousQueue, trackId, audiusTrack?.id ?? null);
+    if (nextQueue === previousQueue) return;
+
+    audiusQueueRef.current = nextQueue;
+    setAudiusQueue(nextQueue);
+    setAudiusMessage('Track removed from queue.');
+  }, [audiusTrack]);
+
+  const handleClearAudiusQueue = useCallback(() => {
+    const keepCurrent = audiusActive && audiusTrack ? [audiusTrack] : [];
+    audiusQueueRef.current = keepCurrent;
+    setAudiusQueue(keepCurrent);
+    setAudiusMessage(keepCurrent.length > 0 ? 'Upcoming tracks cleared. The current track will finish.' : 'Queue cleared.');
+  }, [audiusActive, audiusTrack]);
+
+  const handlePlayAudiusQueue = useCallback(async () => {
+    const queue = audiusQueueRef.current;
+    if (queue.length === 0) throw new Error('Add tracks to your queue first.');
+    const track = queue[0];
+    if (!track) throw new Error('Your queue is empty.');
+    await playAudiusQueueItem(track, queue);
   }, [playAudiusQueueItem]);
+
+  const handleToggleShuffle = useCallback(() => {
+    const nextEnabled = !shuffleEnabled;
+    if (nextEnabled) {
+      const nextQueue = shuffleAudiusQueue(audiusQueueRef.current, audiusTrack?.id ?? null);
+      audiusQueueRef.current = nextQueue;
+      setAudiusQueue(nextQueue);
+    }
+    setShuffleEnabled(nextEnabled);
+    setAudiusMessage(nextEnabled ? 'Shuffle enabled · upcoming tracks reordered.' : 'Shuffle disabled · current queue order retained.');
+  }, [shuffleEnabled, audiusTrack]);
+
+  const handleCycleRepeatMode = useCallback(() => {
+    const nextMode = cycleAudiusRepeatMode(repeatMode);
+    setRepeatMode(nextMode);
+    const label = nextMode === 'one' ? 'Repeat One' : nextMode === 'queue' ? 'Repeat Queue' : 'Repeat Off';
+    setAudiusMessage(`${label} enabled.`);
+  }, [repeatMode]);
+
+  const handleSaveAudiusQueue = useCallback(() => {
+    const saved = saveAudiusQueueState({
+      queue: audiusQueueRef.current,
+      shuffleEnabled,
+      repeatMode,
+    });
+    setQueueSaved(saved);
+    setAudiusMessage(saved
+      ? 'Queue saved in this browser. It will be available next time you visit.'
+      : 'This browser could not save local data. Check storage permissions or available space.');
+  }, [shuffleEnabled, repeatMode]);
 
   const loadAndPlayInPlayer = useCallback(
     (rec: MediaRecord, autoPlay = true) => {
@@ -163,8 +291,6 @@ export default function App() {
 
       setAudiusActive(false);
       setAudiusTrack(null);
-      setAudiusQueue([]);
-      setAudiusQueueIndex(-1);
       const audio = audioRef.current;
       if (audio) {
         audio.loadRecord(rec, status.side, autoPlay);
@@ -189,7 +315,14 @@ export default function App() {
         audio.pause();
         setStatus((prev) => ({ ...prev, isPlaying: false, elapsedSec: audio.getElapsedSec(), level: 0 }));
       } else {
-        if (status.durationSec > 0 && status.elapsedSec >= status.durationSec - 0.5) {
+        const reachedEnd = status.durationSec > 0 && status.elapsedSec >= status.durationSec - 0.5;
+        if (reachedEnd) {
+          const queue = audiusQueueRef.current;
+          const nextTrack = getNextAudiusQueueTrack(queue, audiusTrack?.id ?? null, repeatModeRef.current);
+          if (nextTrack) {
+            void playAudiusQueueItem(nextTrack, queue);
+            return;
+          }
           audio.stop();
         }
         audio.play();
@@ -209,7 +342,7 @@ export default function App() {
       audio.loadRecord(activePlayerRecord, status.side, true);
       setStatus((prev) => ({ ...prev, isPlaying: true }));
     }
-  }, [activePlayerRecord, status.isPlaying, status.side, status.elapsedSec, status.durationSec, audiusActive]);
+  }, [activePlayerRecord, status.isPlaying, status.side, status.elapsedSec, status.durationSec, audiusActive, audiusTrack, playAudiusQueueItem]);
 
   const handleStop = useCallback(() => {
     const audio = audioRef.current;
@@ -225,9 +358,22 @@ export default function App() {
   const handleStepTrackInPlayer = useCallback(
     (delta: number) => {
       if (audiusActive && audiusQueue.length > 0) {
-        const nextIndex = (audiusQueueIndex + delta + audiusQueue.length) % audiusQueue.length;
+        const currentIndex = findAudiusQueueIndex(audiusQueue, audiusTrack?.id ?? null);
+        let nextIndex = currentIndex < 0 ? 0 : currentIndex + delta;
+        if (nextIndex < 0 || nextIndex >= audiusQueue.length) {
+          if (repeatModeRef.current === 'queue') {
+            nextIndex = nextIndex < 0 ? audiusQueue.length - 1 : 0;
+          } else if (delta < 0) {
+            nextIndex = 0;
+          } else {
+            audioRef.current?.stop();
+            setStatus((prev) => ({ ...prev, isPlaying: false, elapsedSec: 0, level: 0 }));
+            setAudiusMessage('End of queue. Add more tracks or enable Repeat Queue.');
+            return;
+          }
+        }
         const nextTrack = audiusQueue[nextIndex];
-        if (nextTrack) void playAudiusQueueItem(nextTrack, audiusQueue, nextIndex);
+        if (nextTrack) void playAudiusQueueItem(nextTrack, audiusQueue);
         return;
       }
       const idx = records.findIndex((r) => r.id === activePlayerRecord.id);
@@ -240,7 +386,7 @@ export default function App() {
         loadAndPlayInPlayer(nextRec, true);
       }
     },
-    [records, activePlayerRecord.id, loadAndPlayInPlayer, audiusActive, audiusQueue, audiusQueueIndex, playAudiusQueueItem]
+    [records, activePlayerRecord.id, loadAndPlayInPlayer, audiusActive, audiusQueue, audiusTrack, playAudiusQueueItem]
   );
 
   const handleToggleSide = useCallback(
@@ -524,7 +670,7 @@ export default function App() {
             onOpenPlayer={() => loadAndPlayInPlayer(focusedShelfRecord, true)}
             onBackToShelf={handleBackToShelf}
             onOpenCoverEditor={() => setCoverEditorOpen(true)}
-            onOpenAudius={() => setAudiusPanelOpen(true)}
+            onOpenAudius={() => { setAudiusPanelInitialTab('browse'); setAudiusPanelOpen(true); }}
             audiusTrack={audiusActive ? audiusTrack : null}
           />
 
@@ -550,6 +696,14 @@ export default function App() {
             status={status}
             audiusActive={audiusActive}
             audiusTrack={audiusTrack}
+            audiusQueueCount={audiusQueue.length}
+            shuffleEnabled={shuffleEnabled}
+            repeatMode={repeatMode}
+            queueSaved={queueSaved}
+            onToggleShuffle={handleToggleShuffle}
+            onCycleRepeatMode={handleCycleRepeatMode}
+            onSaveAudiusQueue={handleSaveAudiusQueue}
+            onOpenAudiusQueue={() => { setAudiusPanelInitialTab('queue'); setAudiusPanelOpen(true); }}
             onStepShelf={(delta) => sceneRef.current?.stepShelf(delta)}
             onTogglePlay={handleTogglePlay}
             onStop={handleStop}
@@ -569,15 +723,27 @@ export default function App() {
         <div className="fixed right-5 top-36 z-20 max-w-[min(340px,88vw)] border border-[#648B72]/30 bg-[#F5F5F2]/95 px-3 py-2 shadow-sm" role="status">
           <p className="text-[10px] font-mono-tech font-semibold tracking-wide text-[#405E49]">AUDIUS STREAMING</p>
           <p className="mt-1 text-[10px] leading-relaxed text-[#5C5C58]">{audiusMessage || 'Audio is streaming directly in this browser.'}</p>
-          <button type="button" onClick={() => setAudiusPanelOpen(true)} className="mt-1 text-[10px] text-[#405E49] underline underline-offset-2">Browse Audius tracks</button>
+          <button type="button" onClick={() => { setAudiusPanelInitialTab('browse'); setAudiusPanelOpen(true); }} className="mt-1 text-[10px] text-[#405E49] underline underline-offset-2">Browse Audius tracks</button>
         </div>
       )}
 
       {audiusPanelOpen && (
         <Suspense fallback={<div className="fixed inset-0 z-40 flex items-center justify-center bg-black/35 text-xs text-white" role="status">Loading Audius catalog…</div>}>
           <AudiusPanel
+            initialTab={audiusPanelInitialTab}
             currentTrackId={audiusTrack?.id ?? null}
+            queue={audiusQueue}
+            shuffleEnabled={shuffleEnabled}
+            repeatMode={repeatMode}
+            queueSaved={queueSaved}
+            onToggleShuffle={handleToggleShuffle}
+            onCycleRepeatMode={handleCycleRepeatMode}
+            onSaveQueue={handleSaveAudiusQueue}
             onPlayTrack={handlePlayAudiusTrack}
+            onPlayQueue={handlePlayAudiusQueue}
+            onAddTracks={handleAddAudiusTracks}
+            onRemoveTrack={handleRemoveAudiusTrack}
+            onClearQueue={handleClearAudiusQueue}
             onClose={() => setAudiusPanelOpen(false)}
           />
         </Suspense>

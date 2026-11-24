@@ -24,6 +24,11 @@ Review date: 24 November 2026
 - Added `VITE_AUDIUS_API_KEY` as the only provider configuration. It is a public client key; no API secret or user Bearer Token is used by this public catalog feature.
 - Routed public track streams through the browser's `HTMLAudioElement` into the existing Web Audio graph where supported. The frequency visualizer can therefore read the live stream analyser rather than relying only on the procedural pulse.
 - Connected the player dock's Play/Pause, Stop/reset, Previous/Next queue controls, elapsed/duration readout and volume slider to the external track.
+- Added an in-session multi-track queue: add individual search results or all visible results, prevent duplicate IDs, play any queued item, remove upcoming items, clear upcoming items while preserving the current track, and automatically advance when the current HTML media stream emits `ended`.
+- Queue advancement reads the latest queue through a ref, so tracks appended while a song is already playing are included when it ends.
+- Added Shuffle, Repeat One and Repeat Queue modes. Shuffle reorders only upcoming tracks while preserving the current item; repeat settings are read through a ref by the asynchronous `ended` callback so mode changes take effect without reloading the page.
+- Queue metadata and playback preferences are versioned and persisted to browser `localStorage`; malformed data, blocked storage and quota errors safely fall back without stopping playback. Playback is not auto-started after reload, in keeping with browser media autoplay restrictions. No stream URL, API key, API secret or user token is stored in the queue snapshot.
+- The saved queue remains local to this browser and is not an Audius account playlist; official Audius playlist mutations require authenticated account write access.
 - Preserved the built-in procedural audio path when users load records from the 3D shelf.
 - Preserved artist/title attribution and a link to the Audius source. Public streamability is not treated as a blanket commercial or synchronization license; track rights must be reviewed individually.
 
@@ -43,11 +48,11 @@ Review date: 24 November 2026
 
 ## Verification status
 
-- All 20 TS/TSX source files passed a TypeScript 5.8 transpilation/syntax pass (0 syntax diagnostics).
+- All 22 TS/TSX source files in this queue patch passed a TypeScript 5.8 transpilation/syntax pass (0 syntax diagnostics).
 - `src/utils/audius.ts` passed a focused strict TypeScript check.
-- All 16 unit tests passed (Audius normalization/link safety, shelf utilities and visualizer math). They were run using Node 22.16's native TypeScript type-stripping with a temporary resolver for this project’s extensionless TypeScript imports.
-- `npm install --ignore-scripts --no-audit --no-fund --no-package-lock` timed out in this environment and did not create `node_modules`.
-- As a result, the repository's regular `npm run lint`, `npm test` and `npm run build` commands could not run here: `vite/client`, `tsx` and `vite` are unavailable without the dependencies. No dependency-resolved full-project typecheck or Vite production build is claimed.
+- The previously released version had 16 passing unit tests (Audius normalization/link safety, shelf utilities and visualizer math). The queue helper suite now contains 11 tests, including append/remove, shuffle ordering, repeat-mode transitions, Repeat One, Repeat Queue wraparound, localStorage save/restore, malformed data and storage failures. The 11 queue tests and four Audius normalization tests passed here using Node 22.16's native TypeScript type stripping; the full 27-test Node/tsx suite should be rerun on the owner's Windows clone.
+- The playback-mode patch adds focused unit tests for Fisher–Yates shuffle ordering, repeat-mode transitions, Repeat One, Repeat Queue wraparound, localStorage save/restore, corrupted data and storage failures. The full dependency-resolved lint, complete unit-test suite and Vite production build must be rerun on the owner's Windows clone before release.
+- The current patch was reviewed and syntax-transpiled without installing dependencies in this environment. No dependency-resolved full-project typecheck or production build is claimed for this playback-mode patch.
 - The project owner subsequently confirmed a successful local preview: Audius trending catalog populated and a public track streamed in the browser with the live visualizer indicator active. Actual speaker output and the full transport/edge-case matrix still need manual confirmation.
 
 ## Recommended local verification
@@ -62,4 +67,4 @@ bun run build
 bun run preview
 ```
 
-Then test trending/search, opening and closing the panel, Play/Pause, Stop then Play, Previous/Next, volume, elapsed/duration, spectrum response, switching back to the built-in shelf player, browser tab visibility and WebGL context restoration.
+Then test trending/search, adding one and multiple tracks, Add all results, duplicate prevention, queue removal/clear, Shuffle order, Repeat One, Repeat Queue wraparound, Save Queue followed by a page reload, playback not auto-starting after reload, automatic next-track playback, Play/Pause, Stop then Play, Previous/Next, volume, elapsed/duration, spectrum response, switching back to the built-in shelf player, browser tab visibility and WebGL context restoration.
