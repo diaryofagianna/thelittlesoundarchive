@@ -1,6 +1,7 @@
 import { ArrowLeft, Disc3, ImagePlus, Music2 } from 'lucide-react';
 import type { AppMode, MediaRecord, MediaSide } from '../types/media';
 import { formatDurationLabel } from '../utils/shelfMath';
+import type { AudiusTrack } from '../utils/audius';
 
 interface TopMetadataBarProps {
   mode: AppMode;
@@ -11,7 +12,8 @@ interface TopMetadataBarProps {
   onOpenPlayer: () => void;
   onBackToShelf: () => void;
   onOpenCoverEditor: () => void;
-  onOpenSpotify: () => void;
+  onOpenAudius: () => void;
+  audiusTrack: AudiusTrack | null;
 }
 
 export function TopMetadataBar({
@@ -23,9 +25,11 @@ export function TopMetadataBar({
   onOpenPlayer,
   onBackToShelf,
   onOpenCoverEditor,
-  onOpenSpotify,
+  onOpenAudius,
+  audiusTrack,
 }: TopMetadataBarProps) {
   const activeTrack = side === 'A' ? record.sideA : record.sideB;
+  const externalTrack = mode === 'player' ? audiusTrack : null;
   const formatLabel =
     record.format === 'cd'
       ? 'COMPACT DISC'
@@ -40,25 +44,25 @@ export function TopMetadataBar({
         <div className="flex items-center gap-2 text-[11px] font-mono-tech text-[#5C5C58] tracking-wide">
           <span>THE LITTLE SOUND ARCHIVE</span>
           <span aria-hidden="true">·</span>
-          <span>{record.catalogCode}</span>
+          <span>{externalTrack ? 'AUDIUS STREAM' : record.catalogCode}</span>
         </div>
 
         <h1 className="mt-1.5 text-2xl sm:text-3xl font-bold tracking-tight text-[#171717] leading-tight">
-          {record.title}
+          {externalTrack?.title ?? record.title}
         </h1>
 
         <dl className="mt-3 grid grid-cols-[88px_1fr] gap-y-1 text-[11px] font-mono-tech">
           <dt className="text-[#6B6B66]">ARTIST</dt>
-          <dd className="text-[#171717] font-medium truncate">{record.artist}</dd>
+          <dd className="text-[#171717] font-medium truncate">{externalTrack?.artist ?? record.artist}</dd>
 
           <dt className="text-[#6B6B66]">FORMAT</dt>
           <dd className="text-[#171717] font-medium">
-            {formatLabel} · SIDE {side}
+            {externalTrack ? 'STREAMING AUDIO' : `${formatLabel} · SIDE ${side}`}
           </dd>
 
           <dt className="text-[#6B6B66]">TRACK</dt>
           <dd className="text-[#171717] font-medium truncate">
-            {activeTrack.title} ({formatDurationLabel(activeTrack.durationSec)})
+            {externalTrack ? `${externalTrack.title} (${formatDurationLabel(externalTrack.durationSec)})` : `${activeTrack.title} (${formatDurationLabel(activeTrack.durationSec)})`}
           </dd>
         </dl>
 
@@ -86,12 +90,12 @@ export function TopMetadataBar({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={onOpenSpotify}
-            aria-label="Open Spotify player"
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#171717] bg-white/90 border border-[#171717]/15 hover:border-[#1DB954]/70 transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#171717]"
+            onClick={onOpenAudius}
+            aria-label="Browse Audius music"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#171717] bg-white/90 border border-[#171717]/15 hover:border-[#648B72]/70 transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#171717]"
           >
-            <Music2 className="w-3.5 h-3.5 text-[#168A40]" aria-hidden="true" />
-            <span className="hidden sm:inline">Spotify</span>
+            <Music2 className="w-3.5 h-3.5 text-[#648B72]" aria-hidden="true" />
+            <span className="hidden sm:inline">Audius</span>
           </button>
           <button
             type="button"

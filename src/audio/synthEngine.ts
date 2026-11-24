@@ -18,6 +18,9 @@ export class ProceduralAudioEngine {
   private activeRecord: MediaRecord | null = null;
   private activeSide: MediaSide = 'A';
   private rpmMode: 33 | 45 = 33;
+  private audioLoop = true;
+  private externalEndedCallback?: () => void;
+  private externalErrorCallback?: () => void;
 
   private elapsedOffset = 0;
   private playStartPerf = 0;
@@ -57,7 +60,7 @@ export class ProceduralAudioEngine {
     if (this.masterGain && this.ctx) {
       this.masterGain.gain.setTargetAtTime(this.volume, this.ctx.currentTime, 0.03);
     }
-    if (this.audioEl) {
+    if (this.audioEl && !this.mediaElSource) {
       this.audioEl.volume = this.volume;
     }
   }
@@ -68,7 +71,7 @@ export class ProceduralAudioEngine {
 
   public setRpmMode(rpm: 33 | 45) {
     this.rpmMode = rpm;
-    if (this.audioEl && this.activeRecord?.format === 'vinyl') {
+    if (this.audioEl && this.audioLoop && this.activeRecord?.format === 'vinyl') {
       this.audioEl.playbackRate = rpm === 45 ? 1.35 : 1.0;
     }
   }
@@ -146,9 +149,45 @@ export class ProceduralAudioEngine {
       this.elapsedOffset = 0;
       this.stepIndex = 0;
     }
+    this.audioLoop = true;
+    this.externalEndedCallback = undefined;
+    this.externalErrorCallback = undefined;
 
     if (autoPlay) {
       this.play();
+    }
+  }
+
+  /** Load a public streaming track into the same Web Audio graph as the local player. */
+  public async loadExternalTrack(
+    record: MediaRecord,
+    trackId: string,
+    streamUrl: string,
+    autoPlay = true,
+    onEnded?: () => void,
+    onError?: () => void,
+  ): Promise<void> {
+    const externalRecord: MediaRecord = {
+      ...record,
+      id: `audius:${trackId}`,
+      customAudioUrl: streamUrl,
+      customAudioName: 'Audius stream',
+    };
+    this.stopNoise();
+    this.clearSequencer();
+    this.teardownAudioElement();
+    this.activeRecord = externalRecord;
+    this.activeSide = 'A';
+    this.audioLoop = false;
+    this.externalEndedCallback = onEnded;
+    this.externalErrorCallback = onError;
+    this.elapsedOffset = 0;
+    this.stepIndex = 0;
+    this.isPlaying = false;
+    if (autoPlay) {
+      this.isPlaying = true;
+      this.playStartPerf = performance.now();
+      await this.playCustomAudio(streamUrl);
     }
   }
 
@@ -160,7 +199,7 @@ export class ProceduralAudioEngine {
     this.playStartPerf = performance.now();
 
     if (this.activeRecord.customAudioUrl) {
-      this.playCustomAudio(this.activeRecord.customAudioUrl);
+      void this.playCustomAudio(this.activeRecord.customAudioUrl).catch(() => undefined);
       return;
     }
 
@@ -194,15 +233,16 @@ export class ProceduralAudioEngine {
     }
   }
 
-  private playCustomAudio(url: string) {
+  private async playCustomAudio(url: string): Promise<void> {
     const ctx = this.ensureContext();
     if (!this.audioEl || this.audioEl.src !== url) {
       this.teardownAudioElement();
-      const el = new Audio(url);
+      const el = new Audio();
       el.crossOrigin = 'anonymous';
-      el.loop = true;
-      el.volume = this.volume;
-      if (this.activeRecord?.format === 'vinyl' && this.rpmMode === 45) {
+      el.src = url;
+      el.loop = this.audioLoop;
+      el.volume = 1;
+      if (this.audioLoop && this.activeRecord?.format === 'vinyl' && this.rpmMode === 45) {
         el.playbackRate = 1.35;
       }
       this.audioEl = el;
@@ -211,11 +251,37 @@ export class ProceduralAudioEngine {
           this.mediaElSource = ctx.createMediaElementSource(el);
           this.mediaElSource.connect(this.masterGain);
         } catch {
-          // Fallback to native audio output
+          // Fall back to native audio output when the browser blocks Web Audio routing.
+          el.volume = this.volume;
         }
+      } else {
+        el.volume = this.volume;
       }
+      el.addEventListener('ended', () => {
+        if (!this.audioLoop) {
+          this.isPlaying = false;
+          this.elapsedOffset = 0;
+          this.externalEndedCallback?.();
+        }
+      });
+      el.addEventListener('error', () => {
+        if (!this.audioLoop) {
+          this.isPlaying = false;
+          this.externalErrorCallback?.();
+        }
+      });
     }
-    this.audioEl.play().catch(() => undefined);
+    const audioElement = this.audioEl;
+    if (!audioElement) throw new Error('The audio element could not be created.');
+    try {
+      await audioElement.play();
+    } catch (error) {
+      if (!this.audioLoop) {
+        this.isPlaying = false;
+        this.externalErrorCallback?.();
+      }
+      throw error;
+    }
   }
 
   private teardownAudioElement() {

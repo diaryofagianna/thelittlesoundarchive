@@ -10,6 +10,7 @@ import {
   Square,
   Volume2,
 } from 'lucide-react';
+import type { AudiusTrack } from '../utils/audius';
 import type {
   AppMode,
   FilterMode,
@@ -34,7 +35,8 @@ interface BottomControlDockProps {
   section: PlayerSection;
   onChangeSection: (s: PlayerSection) => void;
   status: PlayerStatusSnapshot;
-  spotifyControlActive: boolean;
+  audiusActive: boolean;
+  audiusTrack: AudiusTrack | null;
   onStepShelf: (delta: number) => void;
   onTogglePlay: () => void;
   onStop: () => void;
@@ -58,7 +60,8 @@ export function BottomControlDock({
   section,
   onChangeSection,
   status,
-  spotifyControlActive,
+  audiusActive,
+  audiusTrack,
   onStepShelf,
   onTogglePlay,
   onStop,
@@ -73,6 +76,8 @@ export function BottomControlDock({
 }: BottomControlDockProps) {
   const sectionOptions = getSectionOptionsForFormat(activeRecord.format);
   const track = status.side === 'A' ? activeRecord.sideA : activeRecord.sideB;
+  const displayTitle = audiusActive && audiusTrack ? audiusTrack.title : track.title;
+  const displayDuration = audiusActive && audiusTrack ? audiusTrack.durationSec : track.durationSec;
 
   return (
     <div
@@ -185,10 +190,10 @@ export function BottomControlDock({
           </div>
         ) : (
           <div className="flex flex-col gap-2.5">
-            {spotifyControlActive && (
+            {audiusActive && (
               <div className="flex items-center justify-between gap-2 border border-[#1DB954]/30 bg-[#E9F6EC] px-3 py-1.5 text-[10px] font-mono-tech text-[#24643A]" role="status">
-                <span>SPOTIFY CONNECT · REMOTE CONTROL ACTIVE</span>
-                <span>3D PLAYBACK ANIMATION DISABLED</span>
+                <span>AUDIUS STREAM · BROWSER PLAYER ACTIVE</span>
+                <span>LIVE AUDIO VISUALIZER ACTIVE</span>
               </div>
             )}
             {/* Row 1: Camera Inspection Sections + Side / Hardware Switches */}
@@ -218,7 +223,7 @@ export function BottomControlDock({
               </div>
 
               <div className="flex items-center gap-2">
-                {!spotifyControlActive && <button
+                <button
                   type="button"
                   onClick={onToggleVisualizer}
                   aria-pressed={showVisualizer}
@@ -229,9 +234,9 @@ export function BottomControlDock({
                   }`}
                 >
                   Spectrum: {showVisualizer ? 'ON' : 'OFF'}
-                </button>}
+                </button>
 
-                {!spotifyControlActive && activeRecord.format === 'cd' && (
+                {!audiusActive && activeRecord.format === 'cd' && (
                   <button
                     type="button"
                     onClick={onToggleAntiSkip}
@@ -245,7 +250,7 @@ export function BottomControlDock({
                   </button>
                 )}
 
-                {!spotifyControlActive && activeRecord.format === 'vinyl' && (
+                {!audiusActive && activeRecord.format === 'vinyl' && (
                   <button
                     type="button"
                     onClick={onToggleRpm}
@@ -255,7 +260,7 @@ export function BottomControlDock({
                   </button>
                 )}
 
-                {!spotifyControlActive && <div className="flex items-center gap-1 bg-[#E7E7E2] p-0.5">
+                {!audiusActive && <div className="flex items-center gap-1 bg-[#E7E7E2] p-0.5">
                   {(['A', 'B'] as const).map((s) => (
                     <button
                       key={s}
@@ -280,7 +285,7 @@ export function BottomControlDock({
                 <button
                   type="button"
                   onClick={onPrevTrack}
-                  aria-label={spotifyControlActive ? 'Previous Spotify track' : 'Previous edition'}
+                  aria-label={audiusActive ? 'Previous Audius track' : 'Previous edition'}
                   className="inline-flex items-center justify-center w-9 h-9 border border-[#171717]/15 bg-white text-[#171717] hover:bg-[#171717] hover:text-white transition-colors"
                 >
                   <SkipBack className="w-4 h-4" aria-hidden="true" />
@@ -288,7 +293,7 @@ export function BottomControlDock({
                 <button
                   type="button"
                   onClick={onTogglePlay}
-                  aria-label={spotifyControlActive ? 'Toggle Spotify playback' : (status.isPlaying ? 'Pause playback' : 'Start playback')}
+                  aria-label={audiusActive ? 'Toggle Audius playback' : (status.isPlaying ? 'Pause playback' : 'Start playback')}
                   className="inline-flex items-center gap-1.5 px-4 h-9 bg-[#171717] text-[#F7F7F4] hover:bg-[#2E2E2B] transition-colors text-xs font-medium whitespace-nowrap shrink-0"
                 >
                   {status.isPlaying ? (
@@ -299,14 +304,14 @@ export function BottomControlDock({
                   ) : (
                     <>
                       <Play className="w-3.5 h-3.5" aria-hidden="true" />
-                      <span>{spotifyControlActive ? 'Play / Pause' : 'Play'}</span>
+                      <span>Play</span>
                     </>
                   )}
                 </button>
                 <button
                   type="button"
                   onClick={onStop}
-                  aria-label={spotifyControlActive ? 'Pause Spotify playback' : 'Stop playback'}
+                  aria-label={audiusActive ? 'Stop Audius playback' : 'Stop playback'}
                   className="inline-flex items-center justify-center w-9 h-9 border border-[#D93829]/40 bg-[#D93829] text-white hover:bg-[#BC2B1D] transition-colors"
                 >
                   <Square className="w-3.5 h-3.5 fill-current" aria-hidden="true" />
@@ -314,7 +319,7 @@ export function BottomControlDock({
                 <button
                   type="button"
                   onClick={onNextTrack}
-                  aria-label={spotifyControlActive ? 'Next Spotify track' : 'Next edition'}
+                  aria-label={audiusActive ? 'Next Audius track' : 'Next edition'}
                   className="inline-flex items-center justify-center w-9 h-9 border border-[#171717]/15 bg-white text-[#171717] hover:bg-[#171717] hover:text-white transition-colors"
                 >
                   <SkipForward className="w-4 h-4" aria-hidden="true" />
@@ -322,12 +327,13 @@ export function BottomControlDock({
               </div>
 
               <div className="flex items-center gap-3 font-mono-tech text-xs">
-                <span className="text-[#171717] font-semibold truncate max-w-[160px]">
-                  {spotifyControlActive ? 'Spotify Connect device' : track.title}
+                <span className="flex min-w-0 flex-col">
+                  <span className="text-[#171717] font-semibold truncate max-w-[180px]">{displayTitle}</span>
+                  {audiusActive && audiusTrack && <span className="text-[10px] text-[#62625D] truncate max-w-[180px]">{audiusTrack.artist}</span>}
                 </span>
-                {!spotifyControlActive && <span className="text-[#5C5C58] tabular-nums" data-testid="player-timer">
-                  {formatLcdTime(status.elapsedSec)} / {formatDurationLabel(track.durationSec)}
-                </span>}
+                <span className="text-[#5C5C58] tabular-nums" data-testid="player-timer">
+                  {formatLcdTime(status.elapsedSec)} / {formatDurationLabel(displayDuration)}
+                </span>
               </div>
 
               <div className="flex items-center gap-2">

@@ -1,14 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ProceduralAudioEngine } from './audio/synthEngine';
 import { BottomControlDock } from './components/BottomControlDock';
-import { CoverEditorModal } from './components/CoverEditorModal';
 import { FrequencyVisualizerOverlay } from './components/FrequencyVisualizerOverlay';
 import { LoaderScreen } from './components/LoaderScreen';
 import { TopMetadataBar } from './components/TopMetadataBar';
-import { SpotifyPanel } from './components/SpotifyPanel';
-import { SpotifyConnectClient } from './utils/spotifyConnect';
+import { getAudiusTrackStreamUrl, type AudiusTrack } from './utils/audius';
 import { INITIAL_CATALOG } from './data/catalog';
-import { ListeningRoomScene } from './three/ListeningRoomScene';
+import type { ListeningRoomScene } from './three/ListeningRoomScene';
 import type {
   AppMode,
   FilterMode,
@@ -23,18 +21,23 @@ import {
   getPrevRecordIndex,
 } from './utils/shelfMath';
 
+// Load the large 3D scene and optional panels as async chunks.
+const AudiusPanel = lazy(async () => {
+  const module = await import('./components/AudiusPanel');
+  return { default: module.AudiusPanel };
+});
+
+const CoverEditorModal = lazy(async () => {
+  const module = await import('./components/CoverEditorModal');
+  return { default: module.CoverEditorModal };
+});
+
 export default function App() {
   const autostart = useMemo(() => {
     if (typeof window === 'undefined') return false;
     return new URLSearchParams(window.location.search).get('autostart') === '1';
   }, []);
-  const spotifyOAuthCallback = useMemo(() => {
-    if (typeof window === 'undefined') return false;
-    const params = new URLSearchParams(window.location.search);
-    return params.has('code') || params.has('error');
-  }, []);
-
-  const [mode, setMode] = useState<AppMode>(autostart || spotifyOAuthCallback ? 'shelf' : 'loader');
+  const [mode, setMode] = useState<AppMode>(autostart ? 'shelf' : 'loader');
   const [records, setRecords] = useState<MediaRecord[]>(INITIAL_CATALOG);
   const [filter, setFilter] = useState<FilterMode>('all');
   const [focusedIndex, setFocusedIndex] = useState(0);
@@ -45,10 +48,12 @@ export default function App() {
   const [coverEditorOpen, setCoverEditorOpen] = useState(false);
   const [hoverHint, setHoverHint] = useState<string | null>(null);
   const [webglLost, setWebglLost] = useState(false);
-  const [spotifyPanelOpen, setSpotifyPanelOpen] = useState(spotifyOAuthCallback);
-  const [spotifyConnected, setSpotifyConnected] = useState(false);
-  const [spotifyControlActive, setSpotifyControlActive] = useState(false);
-  const [spotifyConnectionMessage, setSpotifyConnectionMessage] = useState('');
+  const [audiusPanelOpen, setAudiusPanelOpen] = useState(false);
+  const [audiusActive, setAudiusActive] = useState(false);
+  const [audiusMessage, setAudiusMessage] = useState('');
+  const [audiusTrack, setAudiusTrack] = useState<AudiusTrack | null>(null);
+  const [audiusQueue, setAudiusQueue] = useState<AudiusTrack[]>([]);
+  const [audiusQueueIndex, setAudiusQueueIndex] = useState(-1);
 
   const [status, setStatus] = useState<PlayerStatusSnapshot>({
     isPlaying: false,
@@ -80,11 +85,22 @@ export default function App() {
   const canvasMountRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<ListeningRoomScene | null>(null);
   const audioRef = useRef<ProceduralAudioEngine | null>(null);
-  const spotifyClientRef = useRef<SpotifyConnectClient | null>(null);
-  if (!spotifyClientRef.current) spotifyClientRef.current = new SpotifyConnectClient();
-  const spotifyClient = spotifyClientRef.current;
-  const volumeCommandTimerRef = useRef<number | null>(null);
-  const pendingSpotifyVolumeRef = useRef(status.volume);
+  const sceneInitStartedRef = useRef(false);
+  const unmountedRef = useRef(false);
+  const latestSceneSnapshotRef = useRef({
+    mode,
+    activeRecord: activePlayerRecord,
+    section,
+    status,
+    visibleRecords: filteredRecords,
+  });
+  latestSceneSnapshotRef.current = {
+    mode,
+    activeRecord: activePlayerRecord,
+    section,
+    status,
+    visibleRecords: filteredRecords,
+  };
 
   // Refs for stable event callbacks inside WebGL mount
   const handleSelectForPlayerRef = useRef<(rec: MediaRecord) => void>(() => {});
@@ -92,23 +108,51 @@ export default function App() {
     (action: 'stop' | 'togglePlay' | 'next' | 'prev' | 'side' | 'speed' | 'volume') => void
   >(() => {});
 
-  const runSpotifyCommand = useCallback(async (command: 'toggle' | 'pause' | 'next' | 'previous' | 'volume', volume?: number): Promise<boolean> => {
-    try {
-      switch (command) {
-        case 'toggle': await spotifyClient.togglePlayback(); break;
-        case 'pause': await spotifyClient.pausePlayback(); break;
-        case 'next': await spotifyClient.skipNext(); break;
-        case 'previous': await spotifyClient.skipPrevious(); break;
-        case 'volume': await spotifyClient.setVolume(volume ?? status.volume); break;
-      }
-      const labels = { toggle: 'Play / Pause', pause: 'Pause', next: 'Next track', previous: 'Previous track', volume: 'Volume' };
-      setSpotifyConnectionMessage(`${labels[command]} command sent to Spotify Connect.`);
-      return true;
-    } catch (error) {
-      setSpotifyConnectionMessage(error instanceof Error ? error.message : 'Spotify command failed.');
-      return false;
-    }
-  }, [spotifyClient, status.volume]);
+  const playAudiusQueueItem = useCallback(async (
+    track: AudiusTrack,
+    queue: AudiusTrack[],
+    queueIndex: number,
+  ) => {
+    const streamUrl = getAudiusTrackStreamUrl(track.id);
+    const audio = audioRef.current;
+    if (!audio) throw new Error('The listening-room audio engine is not ready.');
+
+    await audio.loadExternalTrack(
+      { ...activePlayerRecord, title: track.title, artist: track.artist },
+      track.id,
+      streamUrl,
+      true,
+      () => {
+        setStatus((prev) => ({ ...prev, isPlaying: false, elapsedSec: prev.durationSec, level: 0 }));
+        setAudiusMessage('Track finished. Choose another track or press Play to replay it.');
+      },
+      () => {
+        setStatus((prev) => ({ ...prev, isPlaying: false, level: 0 }));
+        setAudiusMessage('This Audius stream could not be loaded. Try another public track.');
+      },
+    );
+
+    setAudiusTrack(track);
+    setAudiusQueue(queue);
+    setAudiusQueueIndex(queueIndex);
+    setAudiusActive(true);
+    setAudiusMessage(`Now playing · ${track.title}`);
+    setSection('overview');
+    setMode('player');
+    setStatus((prev) => ({
+      ...prev,
+      isPlaying: true,
+      elapsedSec: 0,
+      durationSec: track.durationSec || prev.durationSec,
+      level: 0,
+    }));
+  }, [activePlayerRecord]);
+
+  const handlePlayAudiusTrack = useCallback(async (track: AudiusTrack, queue: AudiusTrack[]) => {
+    const selectedQueue = queue.some((item) => item.id === track.id) ? queue : [track];
+    const queueIndex = Math.max(0, selectedQueue.findIndex((item) => item.id === track.id));
+    await playAudiusQueueItem(track, selectedQueue, queueIndex);
+  }, [playAudiusQueueItem]);
 
   const loadAndPlayInPlayer = useCallback(
     (rec: MediaRecord, autoPlay = true) => {
@@ -117,13 +161,11 @@ export default function App() {
       setMode('player');
       setHoverHint(null);
 
+      setAudiusActive(false);
+      setAudiusTrack(null);
+      setAudiusQueue([]);
+      setAudiusQueueIndex(-1);
       const audio = audioRef.current;
-      if (spotifyControlActive) {
-        // Spotify playback is external. Keep the 3D deck static rather than synchronizing visuals to recordings.
-        audio?.stop();
-        setStatus((prev) => ({ ...prev, isPlaying: false, elapsedSec: 0, level: 0, durationSec: (status.side === 'A' ? rec.sideA : rec.sideB).durationSec }));
-        return;
-      }
       if (audio) {
         audio.loadRecord(rec, status.side, autoPlay);
       }
@@ -136,16 +178,25 @@ export default function App() {
         durationSec: track.durationSec,
       }));
     },
-    [status.side, spotifyControlActive]
+    [status.side]
   );
 
   const handleTogglePlay = useCallback(() => {
-    if (spotifyControlActive) {
-      void runSpotifyCommand('toggle');
-      return;
-    }
     const audio = audioRef.current;
     if (!audio) return;
+    if (audiusActive) {
+      if (status.isPlaying) {
+        audio.pause();
+        setStatus((prev) => ({ ...prev, isPlaying: false, elapsedSec: audio.getElapsedSec(), level: 0 }));
+      } else {
+        if (status.durationSec > 0 && status.elapsedSec >= status.durationSec - 0.5) {
+          audio.stop();
+        }
+        audio.play();
+        setStatus((prev) => ({ ...prev, isPlaying: true, elapsedSec: audio.getElapsedSec() }));
+      }
+      return;
+    }
     if (status.isPlaying) {
       audio.pause();
       setStatus((prev) => ({
@@ -158,13 +209,9 @@ export default function App() {
       audio.loadRecord(activePlayerRecord, status.side, true);
       setStatus((prev) => ({ ...prev, isPlaying: true }));
     }
-  }, [activePlayerRecord, status.isPlaying, status.side, spotifyControlActive, runSpotifyCommand]);
+  }, [activePlayerRecord, status.isPlaying, status.side, status.elapsedSec, status.durationSec, audiusActive]);
 
   const handleStop = useCallback(() => {
-    if (spotifyControlActive) {
-      void runSpotifyCommand('pause');
-      return;
-    }
     const audio = audioRef.current;
     if (audio) audio.stop();
     setStatus((prev) => ({
@@ -173,12 +220,14 @@ export default function App() {
       elapsedSec: 0,
       level: 0,
     }));
-  }, [spotifyControlActive, runSpotifyCommand]);
+  }, []);
 
   const handleStepTrackInPlayer = useCallback(
     (delta: number) => {
-      if (spotifyControlActive) {
-        void runSpotifyCommand(delta > 0 ? 'next' : 'previous');
+      if (audiusActive && audiusQueue.length > 0) {
+        const nextIndex = (audiusQueueIndex + delta + audiusQueue.length) % audiusQueue.length;
+        const nextTrack = audiusQueue[nextIndex];
+        if (nextTrack) void playAudiusQueueItem(nextTrack, audiusQueue, nextIndex);
         return;
       }
       const idx = records.findIndex((r) => r.id === activePlayerRecord.id);
@@ -191,13 +240,13 @@ export default function App() {
         loadAndPlayInPlayer(nextRec, true);
       }
     },
-    [records, activePlayerRecord.id, loadAndPlayInPlayer, spotifyControlActive, runSpotifyCommand]
+    [records, activePlayerRecord.id, loadAndPlayInPlayer, audiusActive, audiusQueue, audiusQueueIndex, playAudiusQueueItem]
   );
 
   const handleToggleSide = useCallback(
     (side: MediaSide) => {
-      if (spotifyControlActive) {
-        setSpotifyConnectionMessage('Side A/B is a cassette feature and does not change Spotify playback.');
+      if (audiusActive) {
+        setAudiusMessage('Side A/B switches the local cassette demo; Audius tracks play as a standalone stream.');
         return;
       }
       const targetRec = mode === 'player' ? activePlayerRecord : focusedShelfRecord;
@@ -214,29 +263,13 @@ export default function App() {
         durationSec: track.durationSec,
       }));
     },
-    [mode, activePlayerRecord, focusedShelfRecord, status.isPlaying, spotifyControlActive]
+    [mode, activePlayerRecord, focusedShelfRecord, status.isPlaying, audiusActive]
   );
 
   const handleChangeVolume = useCallback((vol: number) => {
-    if (spotifyControlActive) {
-      const clamped = Math.max(0, Math.min(1, vol));
-      pendingSpotifyVolumeRef.current = clamped;
-      setStatus((prev) => ({ ...prev, volume: clamped }));
-      if (volumeCommandTimerRef.current !== null) window.clearTimeout(volumeCommandTimerRef.current);
-      // Debounce slider/knob input so rapid movement does not flood Spotify's player endpoint.
-      volumeCommandTimerRef.current = window.setTimeout(() => {
-        volumeCommandTimerRef.current = null;
-        void runSpotifyCommand('volume', pendingSpotifyVolumeRef.current);
-      }, 180);
-      return;
-    }
     const clamped = Math.max(0, Math.min(1, vol));
     audioRef.current?.setVolume(clamped);
     setStatus((prev) => ({ ...prev, volume: clamped }));
-  }, [spotifyControlActive, runSpotifyCommand]);
-
-  useEffect(() => () => {
-    if (volumeCommandTimerRef.current !== null) window.clearTimeout(volumeCommandTimerRef.current);
   }, []);
 
   const handleToggleAntiSkip = useCallback(() => {
@@ -244,8 +277,8 @@ export default function App() {
   }, []);
 
   const handleToggleRpm = useCallback(() => {
-    if (spotifyControlActive) {
-      setSpotifyConnectionMessage('Turntable RPM is a local visual-player setting; Spotify playback speed is not changed.');
+    if (audiusActive) {
+      setAudiusMessage('RPM is a local turntable setting and does not change the speed of an Audius stream.');
       return;
     }
     setStatus((prev) => {
@@ -253,7 +286,7 @@ export default function App() {
       audioRef.current?.setRpmMode(nextRpm);
       return { ...prev, rpmMode: nextRpm };
     });
-  }, [spotifyControlActive]);
+  }, [audiusActive]);
 
   handleSelectForPlayerRef.current = (rec) => {
     loadAndPlayInPlayer(rec, true);
@@ -285,65 +318,57 @@ export default function App() {
     }
   };
 
-  const handleSpotifyConnectionChange = useCallback((connected: boolean) => {
-    setSpotifyConnected(connected);
-    if (!connected) setSpotifyControlActive(false);
-    if (connected) {
-      audioRef.current?.stop();
-      setStatus((prev) => ({ ...prev, isPlaying: false, elapsedSec: 0, level: 0 }));
-      setSpotifyConnectionMessage('Spotify account connected. Choose an available device to continue.');
-    }
-  }, []);
-
-  const handleSpotifyControlModeChange = useCallback((active: boolean) => {
-    if (active && !spotifyConnected) {
-      setSpotifyConnectionMessage('Connect Spotify before enabling remote hardware controls.');
-      return;
-    }
-    if (active) {
-      audioRef.current?.stop();
-      setStatus((prev) => ({ ...prev, isPlaying: false, elapsedSec: 0, level: 0 }));
-      setSpotifyConnectionMessage('Spotify remote controls are active. The 3D player remains static while Spotify plays.');
-    } else {
-      setSpotifyConnectionMessage('Built-in demo player controls restored.');
-    }
-    setSpotifyControlActive(active);
-  }, [spotifyConnected]);
-
-  // Restore the tab-scoped Spotify session and finish a PKCE callback when returning from Spotify.
+  // Load the heavy Three.js scene only after the intro screen is complete.
+  // This keeps the initial entry chunk small while preserving the same scene API.
   useEffect(() => {
-    let cancelled = false;
-    void spotifyClient.initialize().then((result) => {
-      if (cancelled) return;
-      setSpotifyConnected(result.connected);
-      if (result.callbackHandled) setSpotifyPanelOpen(true);
-      if (result.error) setSpotifyConnectionMessage(result.error);
-      else if (result.connected) setSpotifyConnectionMessage('Spotify account connected. Refresh devices to choose a playback target.');
-    });
-    return () => { cancelled = true; };
-  }, [spotifyClient]);
+    if (mode === 'loader' || sceneInitStartedRef.current) return;
 
-  // Mount Three.js scene and Web Audio engine once
-  useEffect(() => {
     const mount = canvasMountRef.current;
     if (!mount) return;
 
+    sceneInitStartedRef.current = true;
+
     const audio = new ProceduralAudioEngine();
+    audio.setVolume(latestSceneSnapshotRef.current.status.volume);
     audioRef.current = audio;
 
-    const scene = new ListeningRoomScene(mount, INITIAL_CATALOG, {
-      onFocusIndexChange: (idx) => setFocusedIndex(idx),
-      onSelectRecordForPlayer: (rec) => handleSelectForPlayerRef.current(rec),
-      onHardwareAction: (action) => handleHardwareActionRef.current(action),
-      onHoverMediaChange: (hovered, label) => setHoverHint(hovered ? label : null),
-      onWebGlContextLost: (lost) => setWebglLost(lost),
-    });
-    sceneRef.current = scene;
+    void import('./three/ListeningRoomScene')
+      .then(({ ListeningRoomScene: Scene }) => {
+        if (unmountedRef.current) return;
 
+        const scene = new Scene(mount, INITIAL_CATALOG, {
+          onFocusIndexChange: (idx) => setFocusedIndex(idx),
+          onSelectRecordForPlayer: (rec) => handleSelectForPlayerRef.current(rec),
+          onHardwareAction: (action) => handleHardwareActionRef.current(action),
+          onHoverMediaChange: (hovered, label) => setHoverHint(hovered ? label : null),
+          onWebGlContextLost: (lost) => setWebglLost(lost),
+        });
+        sceneRef.current = scene;
+
+        // Effects may have run before the async scene chunk finished loading.
+        const snapshot = latestSceneSnapshotRef.current;
+        scene.setVisibleRecords(snapshot.visibleRecords);
+        scene.setAppState({
+          mode: snapshot.mode,
+          activeRecord: snapshot.activeRecord,
+          section: snapshot.section,
+          status: snapshot.status,
+        });
+      })
+      .catch((error: unknown) => {
+        if (unmountedRef.current) return;
+        console.error('Unable to load the 3D listening room scene.', error);
+        setHoverHint('The 3D listening room could not be initialized. Please reload the page.');
+      });
+  }, [mode]);
+
+  // Dispose the scene and audio engine only when the React app unmounts.
+  useEffect(() => {
     return () => {
-      scene.dispose();
+      unmountedRef.current = true;
+      sceneRef.current?.dispose();
       sceneRef.current = null;
-      audio.dispose();
+      audioRef.current?.dispose();
       audioRef.current = null;
     };
   }, []);
@@ -411,7 +436,7 @@ export default function App() {
           e.preventDefault();
           handleTogglePlay();
         } else if (e.key === 'Escape') {
-          if (!spotifyControlActive) handleStop();
+          if (!audiusActive) handleStop();
           setMode('shelf');
         } else if (e.key === 'ArrowRight') {
           handleStepTrackInPlayer(1);
@@ -430,7 +455,7 @@ export default function App() {
     handleTogglePlay,
     handleStop,
     handleStepTrackInPlayer,
-    spotifyControlActive,
+    audiusActive,
   ]);
 
   const handleSaveEditedRecord = useCallback(
@@ -439,23 +464,23 @@ export default function App() {
         prev.map((r) => (r.id === updated.id ? updated : r))
       );
       sceneRef.current?.updateRecordMetadata(updated);
-      if (mode === 'player' && activePlayerRecord.id === updated.id && !spotifyControlActive) {
+      if (mode === 'player' && activePlayerRecord.id === updated.id && !audiusActive) {
         audioRef.current?.loadRecord(updated, status.side, status.isPlaying);
       }
     },
-    [mode, activePlayerRecord.id, status.side, status.isPlaying, spotifyControlActive]
+    [mode, activePlayerRecord.id, status.side, status.isPlaying, audiusActive]
   );
 
   const handleBackToShelf = useCallback(() => {
-    // Leaving the 3D room should not pause playback on an external Spotify Connect device.
-    if (!spotifyControlActive) handleStop();
+    // Let an Audius stream continue while browsing the shelf.
+    if (!audiusActive) handleStop();
     setMode('shelf');
     const shelfIdx = filteredRecords.findIndex((r) => r.id === activePlayerRecord.id);
     if (shelfIdx >= 0) {
       setFocusedIndex(shelfIdx);
       sceneRef.current?.scrollToShelfIndex(shelfIdx);
     }
-  }, [handleStop, spotifyControlActive, filteredRecords, activePlayerRecord.id]);
+  }, [handleStop, audiusActive, filteredRecords, activePlayerRecord.id]);
 
   return (
     <main
@@ -499,7 +524,8 @@ export default function App() {
             onOpenPlayer={() => loadAndPlayInPlayer(focusedShelfRecord, true)}
             onBackToShelf={handleBackToShelf}
             onOpenCoverEditor={() => setCoverEditorOpen(true)}
-            onOpenSpotify={() => setSpotifyPanelOpen(true)}
+            onOpenAudius={() => setAudiusPanelOpen(true)}
+            audiusTrack={audiusActive ? audiusTrack : null}
           />
 
           <FrequencyVisualizerOverlay
@@ -522,7 +548,8 @@ export default function App() {
             section={section}
             onChangeSection={setSection}
             status={status}
-            spotifyControlActive={spotifyControlActive}
+            audiusActive={audiusActive}
+            audiusTrack={audiusTrack}
             onStepShelf={(delta) => sceneRef.current?.stepShelf(delta)}
             onTogglePlay={handleTogglePlay}
             onStop={handleStop}
@@ -538,38 +565,32 @@ export default function App() {
         </>
       )}
 
-      {spotifyControlActive && mode === 'player' && (
-        <div className="fixed right-5 top-36 z-20 max-w-[min(340px,88vw)] border border-[#1DB954]/30 bg-[#F5F5F2]/95 px-3 py-2 shadow-sm" role="status">
-          <p className="text-[10px] font-mono-tech font-semibold tracking-wide text-[#24643A]">SPOTIFY CONNECT REMOTE</p>
-          <p className="mt-1 text-[10px] leading-relaxed text-[#5C5C58]">{spotifyConnectionMessage || 'Hardware controls send commands to your selected Spotify device.'}</p>
-          <button type="button" onClick={() => setSpotifyPanelOpen(true)} className="mt-1 text-[10px] text-[#24643A] underline underline-offset-2">Manage device</button>
+      {audiusActive && mode === 'player' && (
+        <div className="fixed right-5 top-36 z-20 max-w-[min(340px,88vw)] border border-[#648B72]/30 bg-[#F5F5F2]/95 px-3 py-2 shadow-sm" role="status">
+          <p className="text-[10px] font-mono-tech font-semibold tracking-wide text-[#405E49]">AUDIUS STREAMING</p>
+          <p className="mt-1 text-[10px] leading-relaxed text-[#5C5C58]">{audiusMessage || 'Audio is streaming directly in this browser.'}</p>
+          <button type="button" onClick={() => setAudiusPanelOpen(true)} className="mt-1 text-[10px] text-[#405E49] underline underline-offset-2">Browse Audius tracks</button>
         </div>
       )}
 
-      {spotifyPanelOpen && (
-        <SpotifyPanel
-          client={spotifyClient}
-          connected={spotifyConnected}
-          controlActive={spotifyControlActive}
-          connectionMessage={spotifyConnectionMessage}
-          onConnectionChange={handleSpotifyConnectionChange}
-          onControlModeChange={handleSpotifyControlModeChange}
-          onClose={() => setSpotifyPanelOpen(false)}
-          onStartSpotify={() => {
-            // Embed fallback is an independent Spotify player, not the Connect remote target.
-            setSpotifyControlActive(false);
-            audioRef.current?.stop();
-            setStatus((prev) => ({ ...prev, isPlaying: false, elapsedSec: 0, level: 0 }));
-          }}
-        />
+      {audiusPanelOpen && (
+        <Suspense fallback={<div className="fixed inset-0 z-40 flex items-center justify-center bg-black/35 text-xs text-white" role="status">Loading Audius catalog…</div>}>
+          <AudiusPanel
+            currentTrackId={audiusTrack?.id ?? null}
+            onPlayTrack={handlePlayAudiusTrack}
+            onClose={() => setAudiusPanelOpen(false)}
+          />
+        </Suspense>
       )}
 
       {coverEditorOpen && (
-        <CoverEditorModal
-          record={displayRecord}
-          onClose={() => setCoverEditorOpen(false)}
-          onSaveRecord={handleSaveEditedRecord}
-        />
+        <Suspense fallback={<div className="fixed inset-0 z-40 flex items-center justify-center bg-black/35 text-xs text-white" role="status">Loading cover editor…</div>}>
+          <CoverEditorModal
+            record={displayRecord}
+            onClose={() => setCoverEditorOpen(false)}
+            onSaveRecord={handleSaveEditedRecord}
+          />
+        </Suspense>
       )}
     </main>
   );
