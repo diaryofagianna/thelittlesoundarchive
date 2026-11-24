@@ -45,3 +45,66 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+
+/* Mobile layout support: honor display cutouts and keep the dock reachable. */
+@media (max-width: 639px) {
+  html,
+  body,
+  #root {
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+
+  .mobile-safe-header {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
+  }
+
+  .mobile-dock-anchor {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
+  }
+
+  .mobile-dock-surface {
+    max-height: min(48dvh, 24rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-dock-surface button,
+  .mobile-dock-surface input {
+    touch-action: manipulation;
+  }
+}
+
+/* Extra-narrow phones: give album metadata a full row, then place the index
+   beside the icon-only actions so the header does not cover the 3D artwork. */
+@media (max-width: 320px) {
+  .mobile-safe-header {
+    flex-wrap: wrap;
+    row-gap: 0.5rem;
+  }
+
+  .mobile-safe-header > div:first-child {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .mobile-safe-header > div:last-child {
+    width: 100%;
+    max-width: none;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .mobile-safe-header > div:last-child > div:last-child {
+    flex-wrap: nowrap;
+  }
+}
+
+@media (max-width: 320px) {
+  .mobile-safe-header > div:first-child > dl {
+    display: none;
+  }
+}

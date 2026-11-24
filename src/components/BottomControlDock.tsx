@@ -104,7 +104,7 @@ export function BottomControlDock({
 
   return (
     <div
-      className={`fixed bottom-4 left-1/2 z-20 -translate-x-1/2 w-[min(920px,94vw)] transition-transform duration-200 ease-out ${
+      className={`fixed bottom-4 left-1/2 z-20 -translate-x-1/2 w-[calc(100%-1rem)] sm:w-[min(920px,94vw)] mobile-dock-anchor transition-transform duration-200 ease-out ${
         collapsed ? 'translate-y-[calc(100%-30px)]' : 'translate-y-0'
       }`}
     >
@@ -131,7 +131,7 @@ export function BottomControlDock({
       </div>
 
       {/* Main Dock Surface (solid opaque surface — no backdrop-filter over WebGL) */}
-      <div className="bg-[#F5F5F2] border border-[#171717]/18 px-4 py-3 shadow-sm">
+      <div className="bg-[#F5F5F2] border border-[#171717]/18 px-2 py-2 sm:px-4 sm:py-3 shadow-sm mobile-dock-surface">
         {mode === 'shelf' ? (
           <div className="flex flex-wrap items-center justify-between gap-3">
             {/* Shelf Step Navigation */}
@@ -140,7 +140,7 @@ export function BottomControlDock({
                 type="button"
                 onClick={() => onStepShelf(-1)}
                 aria-label="Previous record"
-                className="inline-flex items-center justify-center w-9 h-9 border border-[#171717]/15 bg-white text-[#171717] hover:bg-[#171717] hover:text-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#171717]"
+                className="inline-flex items-center justify-center w-11 h-11 sm:w-9 sm:h-9 border border-[#171717]/15 bg-white text-[#171717] hover:bg-[#171717] hover:text-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#171717]"
               >
                 <ChevronLeft className="w-4 h-4" aria-hidden="true" />
               </button>
@@ -148,7 +148,7 @@ export function BottomControlDock({
                 type="button"
                 onClick={() => onStepShelf(1)}
                 aria-label="Next record"
-                className="inline-flex items-center justify-center w-9 h-9 border border-[#171717]/15 bg-white text-[#171717] hover:bg-[#171717] hover:text-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#171717]"
+                className="inline-flex items-center justify-center w-11 h-11 sm:w-9 sm:h-9 border border-[#171717]/15 bg-white text-[#171717] hover:bg-[#171717] hover:text-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#171717]"
               >
                 <ChevronRight className="w-4 h-4" aria-hidden="true" />
               </button>
@@ -177,7 +177,7 @@ export function BottomControlDock({
                     key={tab.id}
                     type="button"
                     onClick={() => onChangeFilter(tab.id)}
-                    className={`px-3 py-1.5 text-xs font-mono-tech transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#171717] ${
+                    className={`min-h-11 sm:min-h-0 px-2.5 py-1.5 text-xs font-mono-tech transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#171717] ${
                       active
                         ? 'bg-[#171717] text-[#F7F7F4]'
                         : 'text-[#454542] hover:text-[#171717]'
@@ -200,7 +200,7 @@ export function BottomControlDock({
                   key={s}
                   type="button"
                   onClick={() => onToggleSide(s)}
-                  className={`px-2.5 py-1.5 text-xs font-mono-tech transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#171717] ${
+                  className={`min-h-11 sm:min-h-0 px-2.5 py-1.5 text-xs font-mono-tech transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#171717] ${
                     status.side === s
                       ? 'bg-white text-[#171717] font-semibold'
                       : 'text-[#5C5C58] hover:text-[#171717]'
@@ -226,7 +226,7 @@ export function BottomControlDock({
                       onClick={onToggleShuffle}
                       aria-pressed={shuffleEnabled}
                       title="Shuffle upcoming tracks"
-                      className={`inline-flex h-7 items-center gap-1.5 border px-2 text-[10px] font-mono-tech transition-colors ${shuffleEnabled ? 'border-[#648B72] bg-[#E2EDE3] text-[#315A3B]' : 'border-[#171717]/20 bg-white text-[#454542] hover:bg-[#E7E7E2]'}`}
+                      className={`inline-flex min-h-11 sm:min-h-0 items-center gap-1.5 border px-2 text-[10px] font-mono-tech transition-colors ${shuffleEnabled ? 'border-[#648B72] bg-[#E2EDE3] text-[#315A3B]' : 'border-[#171717]/20 bg-white text-[#454542] hover:bg-[#E7E7E2]'}`}
                     >
                       <Shuffle className="h-3.5 w-3.5" aria-hidden="true" /> SHUFFLE
                     </button>
@@ -235,7 +235,7 @@ export function BottomControlDock({
                       onClick={onCycleRepeatMode}
                       aria-pressed={repeatMode !== 'off'}
                       title="Cycle Repeat Off, Repeat Queue, Repeat One"
-                      className={`inline-flex h-7 items-center gap-1.5 border px-2 text-[10px] font-mono-tech transition-colors ${repeatMode !== 'off' ? 'border-[#648B72] bg-[#E2EDE3] text-[#315A3B]' : 'border-[#171717]/20 bg-white text-[#454542] hover:bg-[#E7E7E2]'}`}
+                      className={`inline-flex min-h-11 sm:min-h-0 items-center gap-1.5 border px-2 text-[10px] font-mono-tech transition-colors ${repeatMode !== 'off' ? 'border-[#648B72] bg-[#E2EDE3] text-[#315A3B]' : 'border-[#171717]/20 bg-white text-[#454542] hover:bg-[#E7E7E2]'}`}
                     >
                       {repeatMode === 'one' ? <Repeat1 className="h-3.5 w-3.5" aria-hidden="true" /> : <Repeat className="h-3.5 w-3.5" aria-hidden="true" />}
                       {repeatMode === 'one' ? 'REPEAT ONE' : repeatMode === 'queue' ? 'REPEAT QUEUE' : 'REPEAT OFF'}
@@ -244,7 +244,7 @@ export function BottomControlDock({
                       type="button"
                       onClick={onSaveAudiusQueue}
                       title="Save queue to this browser"
-                      className="inline-flex h-7 items-center gap-1.5 border border-[#171717]/20 bg-white px-2 text-[10px] font-mono-tech text-[#454542] hover:bg-[#E7E7E2]"
+                      className="inline-flex min-h-11 sm:min-h-0 items-center gap-1.5 border border-[#171717]/20 bg-white px-2 text-[10px] font-mono-tech text-[#454542] hover:bg-[#E7E7E2]"
                     >
                       {queueSaved ? <Check className="h-3.5 w-3.5 text-[#55725B]" aria-hidden="true" /> : <Save className="h-3.5 w-3.5" aria-hidden="true" />}
                       {queueSaved ? 'SAVED' : 'SAVE QUEUE'}
@@ -253,7 +253,7 @@ export function BottomControlDock({
                   <button
                     type="button"
                     onClick={onOpenAudiusQueue}
-                    className="inline-flex h-7 items-center gap-1.5 bg-[#171717] px-2.5 text-[10px] font-mono-tech text-white hover:bg-[#30302D]"
+                    className="inline-flex min-h-11 sm:min-h-0 items-center gap-1.5 bg-[#171717] px-2.5 text-[10px] font-mono-tech text-white hover:bg-[#30302D]"
                   >
                     <ListMusic className="h-3.5 w-3.5" aria-hidden="true" /> QUEUE ({audiusQueueCount})
                   </button>
@@ -263,7 +263,7 @@ export function BottomControlDock({
             {/* Row 1: Camera Inspection Sections + Side / Hardware Switches */}
             <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#171717]/10">
               <div
-                className="flex items-center gap-1 overflow-x-auto"
+                className="flex min-w-0 max-w-full items-center gap-1 overflow-x-auto"
                 role="group"
                 aria-label="Hardware inspection view"
               >
@@ -274,7 +274,7 @@ export function BottomControlDock({
                       key={opt.id}
                       type="button"
                       onClick={() => onChangeSection(opt.id)}
-                      className={`px-2.5 py-1 text-xs font-mono-tech transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#171717] ${
+                      className={`min-h-11 sm:min-h-0 px-2.5 py-1 text-xs font-mono-tech transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#171717] ${
                         active
                           ? 'bg-[#171717] text-[#F7F7F4]'
                           : 'text-[#454542] hover:text-[#171717] hover:bg-[#E7E7E2]'
@@ -291,7 +291,7 @@ export function BottomControlDock({
                   type="button"
                   onClick={onToggleVisualizer}
                   aria-pressed={showVisualizer}
-                  className={`px-2.5 py-1 text-[11px] font-mono-tech border transition-colors whitespace-nowrap shrink-0 ${
+                  className={`min-h-11 sm:min-h-0 px-2.5 py-1 text-[11px] font-mono-tech border transition-colors whitespace-nowrap shrink-0 ${
                     showVisualizer
                       ? 'border-[#171717] bg-[#171717] text-white'
                       : 'border-[#171717]/20 bg-white text-[#454542]'
@@ -304,7 +304,7 @@ export function BottomControlDock({
                   <button
                     type="button"
                     onClick={onToggleAntiSkip}
-                    className={`px-2.5 py-1 text-[11px] font-mono-tech border transition-colors whitespace-nowrap shrink-0 ${
+                    className={`min-h-11 sm:min-h-0 px-2.5 py-1 text-[11px] font-mono-tech border transition-colors whitespace-nowrap shrink-0 ${
                       status.antiSkip
                         ? 'border-[#171717] bg-[#171717] text-white'
                         : 'border-[#171717]/20 bg-white text-[#454542]'
@@ -318,7 +318,7 @@ export function BottomControlDock({
                   <button
                     type="button"
                     onClick={onToggleRpm}
-                    className="px-2.5 py-1 text-[11px] font-mono-tech border border-[#171717]/20 bg-white text-[#171717] hover:border-[#171717] transition-colors whitespace-nowrap shrink-0"
+                    className="min-h-11 sm:min-h-0 px-2.5 py-1 text-[11px] font-mono-tech border border-[#171717]/20 bg-white text-[#171717] hover:border-[#171717] transition-colors whitespace-nowrap shrink-0"
                   >
                     {status.rpmMode} RPM
                   </button>
@@ -330,7 +330,7 @@ export function BottomControlDock({
                       key={s}
                       type="button"
                       onClick={() => onToggleSide(s)}
-                      className={`px-2 py-1 text-[11px] font-mono-tech transition-colors whitespace-nowrap shrink-0 ${
+                      className={`min-h-11 sm:min-h-0 px-2 py-1 text-[11px] font-mono-tech transition-colors whitespace-nowrap shrink-0 ${
                         status.side === s
                           ? 'bg-white text-[#171717] font-semibold'
                           : 'text-[#5C5C58] hover:text-[#171717]'
@@ -350,7 +350,7 @@ export function BottomControlDock({
                   type="button"
                   onClick={onPrevTrack}
                   aria-label={audiusActive ? 'Previous Audius track' : 'Previous edition'}
-                  className="inline-flex items-center justify-center w-9 h-9 border border-[#171717]/15 bg-white text-[#171717] hover:bg-[#171717] hover:text-white transition-colors"
+                  className="inline-flex items-center justify-center w-11 h-11 sm:w-9 sm:h-9 border border-[#171717]/15 bg-white text-[#171717] hover:bg-[#171717] hover:text-white transition-colors"
                 >
                   <SkipBack className="w-4 h-4" aria-hidden="true" />
                 </button>
@@ -358,7 +358,7 @@ export function BottomControlDock({
                   type="button"
                   onClick={onTogglePlay}
                   aria-label={audiusActive ? 'Toggle Audius playback' : (status.isPlaying ? 'Pause playback' : 'Start playback')}
-                  className="inline-flex items-center gap-1.5 px-4 h-9 bg-[#171717] text-[#F7F7F4] hover:bg-[#2E2E2B] transition-colors text-xs font-medium whitespace-nowrap shrink-0"
+                  className="inline-flex items-center gap-1.5 px-4 min-h-11 sm:min-h-0 sm:h-9 bg-[#171717] text-[#F7F7F4] hover:bg-[#2E2E2B] transition-colors text-xs font-medium whitespace-nowrap shrink-0"
                 >
                   {status.isPlaying ? (
                     <>
@@ -376,7 +376,7 @@ export function BottomControlDock({
                   type="button"
                   onClick={onStop}
                   aria-label={audiusActive ? 'Stop Audius playback' : 'Stop playback'}
-                  className="inline-flex items-center justify-center w-9 h-9 border border-[#D93829]/40 bg-[#D93829] text-white hover:bg-[#BC2B1D] transition-colors"
+                  className="inline-flex items-center justify-center w-11 h-11 sm:w-9 sm:h-9 border border-[#D93829]/40 bg-[#D93829] text-white hover:bg-[#BC2B1D] transition-colors"
                 >
                   <Square className="w-3.5 h-3.5 fill-current" aria-hidden="true" />
                 </button>
@@ -384,7 +384,7 @@ export function BottomControlDock({
                   type="button"
                   onClick={onNextTrack}
                   aria-label={audiusActive ? 'Next Audius track' : 'Next edition'}
-                  className="inline-flex items-center justify-center w-9 h-9 border border-[#171717]/15 bg-white text-[#171717] hover:bg-[#171717] hover:text-white transition-colors"
+                  className="inline-flex items-center justify-center w-11 h-11 sm:w-9 sm:h-9 border border-[#171717]/15 bg-white text-[#171717] hover:bg-[#171717] hover:text-white transition-colors"
                 >
                   <SkipForward className="w-4 h-4" aria-hidden="true" />
                 </button>
@@ -412,7 +412,7 @@ export function BottomControlDock({
                   max={100}
                   value={Math.round(status.volume * 100)}
                   onChange={(e) => onChangeVolume(Number(e.target.value) / 100)}
-                  className="w-24 accent-[#171717] cursor-pointer"
+                  className="w-20 sm:w-24 min-h-11 sm:min-h-0 accent-[#171717] cursor-pointer"
                 />
                 <span className="font-mono-tech text-[11px] text-[#5C5C58] w-8 text-right tabular-nums">
                   {Math.round(status.volume * 100)}%
